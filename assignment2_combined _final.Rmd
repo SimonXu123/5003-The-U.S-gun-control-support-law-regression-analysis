@@ -1,0 +1,423 @@
+---
+title: "5003 Deliverable Two"
+author: 'Group38'
+date: "7/11/2021"
+output:
+  html_document:
+    code_folding: hide
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+```{r loading packages, message=FALSE}
+library(foreign)
+library (dplyr)
+# library(arm)
+# library(psych)
+library(ggplot2)
+library(gridExtra)
+# library(tidyr)
+library(gplots)
+library(ggpubr)
+library(graphics)
+library(data.table)
+library(scales)
+library(car)
+# install.packages("Rtools")
+# install.packages("DMwR2")
+# install_github("vqv/ggbiplot")
+library(devtools)
+library(DMwR2)
+library(ggbiplot)
+library(caret)
+library(pROC)
+
+```
+# Overview of the problem
+In the United States, there has been controversy over whether to implement stricter control of guns. The issue we will study is based on social surveys to obtain people's attitudes towards gun control and their social conditions in the United States. We will use this data set to analyze and apply at least four classification algorithms to predict whether to support gun control. In IDA process, we did descriptive analysis, plot a correlation graph to show the relationship between each features. Used box plot to show whether there are outliers. Then we describe that we are going to deal with missing value by using imputation, and we also found there are 57% data are missing. After that, we used PCA to reduce the dimension and made a graph for visualizing. Finally, we made a density estimation plot to show the relation among income, age and sex.
+
+```{r, warning=FALSE}
+gun.data <- read.spss("GSS7216_R3.sav", to.data.frame = T) %>%
+  dplyr::select("GUNLAW",
+                "OWNGUN", 
+                "CHILDS",
+                "SIBS",
+                "AGE",
+                "SEX",
+                "RACE",
+                "DEGREE",
+                "RELIG",
+                "PARTYID",
+                "REGION",
+                "YEAR",
+                "CHILDS",
+                "SIBS",
+                "EDUC",
+                "PAEDUC",
+                "MAEDUC",
+                "EARNRS",
+                "TEENS",
+                "ADULTS",
+                "INCOME",
+                "RINCOME",
+                "PARTFULL",
+                "SATJOB",
+                "WLTHWHTS", 
+                "WLTHBLKS",
+                "COMPUSE",
+                "RACPUSH",
+                "RACCHURH",
+                "INTWKDYM", 
+                "INTWKDYH", 
+                "INTWKENM", 
+                "INTWKENH",
+                "YEARVAL",
+                "OLD1", 
+                "OLD2",
+                "OLD3",
+                "AGEWED", "SPEDUC", "COEDUC", "WHENHS", "WHENCOL", "HOMPOP", 
+                "SIZE", "DOTDATA", "DOTPEOP", "DOTTHNG", "DOTGED", "DOTSVP", "DOTPRES", "SPDOTDAT", "SPDOTPEO", "SPDOTTHN", "SPDOTGED",
+                "SPDOTSVP", "SPDOTPRE", "PADOTDAT", "PADOTPEO", "PADOTTHN", "PADOTGED", "PADOTSVP", "PADOTPRE", "WEEKSWRK",
+                "TVHOURS", "EMAILMIN", "EMAILHR", "WWWHR", "WWWMIN", "INTSTART", "SNSMYEAR",  "USUALHRS",
+                "MOSTHRS", "LEASTHRS", "PHYSHLTH", "MNTLHLTH", "HLTHDAYS", "HURTATWK", "USETECH", "WEIGHT", "HEIGHT", "NTWKHARD", "MISSWORK", "EXTRAYR",
+                "VALGIVEN", "COLSCINM", "VISNHIST", "VISZOO", "VISSCI", "REALINC", "REALRINC", "CONINC", "CONRINC", "WORDSUM", 
+                "SEI10", "SEI10EDUC", "SEI10INC", "PASEI10", "PASEI10EDUC", "PASEI10INC", "MASEI10", "MASEI10EDUC", "MASEI10INC", "SPSEI10", "SPSEI10EDUC",
+                "SPSEI10INC", "PRESTIGE", "PRESTG80", "PRESTG10", "PRESTG105PLUS", "SPPRES", "SPPRES80", "SPPRES10", "SPPRES105PLUS", "COPRES10", "PAPRES16",
+                "PAPRES80", "PAPRES10", "PAPRES105PLUS", "MAPRES80", "MAPRES10", "MAPRES105PLUS")
+gun.data <- gun.data[complete.cases(gun.data[,"GUNLAW"]),] # delete NA value in GUNLAW column
+```
+# Dataset description
+## Data Reduction
+Since the original data set has more than 5000 features, we selected 119 features related to gun control. In addition, when we look at the proportion of missing value in the present data set, there are many attributes have more than 90% missing value, meanwhile, the original dataset has 55% missing value. Because these features does not have enough data to build the model, and it is not suitable to impute these missing value, in this case, we deleted the columns which contains over 50% missing value in order to improve our model prediction performance. 
+
+```{r}
+# Miss <- function(x){
+#   sum(is.na(x))/length(x)* 100
+#   }
+# apply(gun.data, 2, Miss)
+
+flag <- apply(gun.data, 2, function(x) sum(is.na(x))/length(x)* 100 <= 50)
+gun <- gun.data[, which(flag)]
+
+#apply(gun, 2, Miss)
+
+original_precentage_missing = (sum(is.na(gun.data))/prod(dim(gun.data)))*100
+original_precentage_missing
+precentage_missing = (sum(is.na(gun))/prod(dim(gun)))*100
+precentage_missing
+```
+## Data transformation
+For the missing value, due to degree attributes only has 0.29 missing value, then we delete the related missing value samples. For the missing value of income and rincome features, we deleted the related rows as well because these people does not answer an income range and we could not just determine as undecided. For other missing value in the categorical attributes,  we used undecided or other to replace NA in order to respect respondent's choice. Finally, the data set we would use includes 22549 rows and 41 columns with 6.3% missing value. The method we deal with missing value is using KNN for filling in missing value.
+
+```{r}
+#lapply(gun, function(x) levels(x))
+gun <- gun[complete.cases(gun[,c("DEGREE", "INCOME", "RINCOME")]),]
+
+gun$CHILDS <- recode(gun$CHILDS, "'EIGHT OR MORE' = 8")
+gun$AGE <- recode(gun$AGE, "'89 OR OLDER' = 89")
+gun$EARNRS <- recode(gun$EARNRS, "'EIGHT OR MORE' = 8")
+gun$TEENS <- recode(gun$TEENS, "'8 OR MORE' = 8")
+gun$ADULTS <- recode(gun$ADULTS, "'8 OR MORE' = 8")
+gun$OLD1 <- recode(gun$OLD1, "'97 or older' = 97")
+gun$OLD2 <- recode(gun$OLD2, "'97 or older' = 97")
+gun$OWNGUN <- recode(gun$OWNGUN, "NA = 'undecided'")
+gun$PARTYID <- recode(gun$PARTYID, "NA = 'undecided'")
+gun$SATJOB <- recode(gun$SATJOB, "NA = 'undecided'")
+gun$RELIG <- recode(gun$RELIG, "NA = 'OTHER'")
+
+gun$CHILDS <- as.numeric(as.character(gun$CHILDS))
+gun$SIBS <- as.numeric(as.character(gun$SIBS))
+gun$AGE <- as.numeric(as.character(gun$AGE))
+gun$EDUC <- as.numeric(as.character(gun$EDUC)) 
+gun$PAEDUC <- as.numeric(as.character(gun$PAEDUC)) 
+gun$MAEDUC <- as.numeric(as.character(gun$MAEDUC))
+gun$EARNRS <- as.numeric(as.character(gun$EARNRS))
+gun$TEENS <- as.numeric(as.character(gun$TEENS))
+gun$ADULTS <- as.numeric(as.character(gun$ADULTS))
+gun$OLD1 <- as.numeric(as.character(gun$OLD1))
+gun$OLD2 <- as.numeric(as.character(gun$OLD2))
+gun$SPEDUC <- as.numeric(as.character(gun$SPEDUC))
+gun$HOMPOP <- as.numeric(as.character(gun$HOMPOP))
+gun$SIZE <- as.numeric(as.character(gun$SIZE))
+gun$TVHOURS <- as.numeric(as.character(gun$TVHOURS))
+gun$REALINC <- as.numeric(as.character(gun$REALINC))
+gun$REALRINC <- as.numeric(as.character(gun$REALRINC))
+gun$CONINC <- as.numeric(as.character(gun$CONINC))
+gun$CONRINC <- as.numeric(as.character(gun$CONRINC))
+gun$SEI10 <- as.numeric(as.character(gun$SEI10))
+gun$SEI10EDUC <- as.numeric(as.character(gun$SEI10EDUC))
+gun$SEI10INC <- as.numeric(as.character(gun$SEI10INC))
+gun$PASEI10 <- as.numeric(as.character(gun$PASEI10))
+gun$PASEI10EDUC <- as.numeric(as.character(gun$PASEI10EDUC))
+gun$PASEI10INC <- as.numeric(as.character(gun$PASEI10INC))
+gun$PRESTG10 <- as.numeric(as.character(gun$PRESTG10))
+gun$PRESTG105PLUS <- as.numeric(as.character(gun$PRESTG105PLUS))
+gun$PAPRES10 <- as.numeric(as.character(gun$PAPRES10))
+gun$PAPRES105PLUS <- as.numeric(as.character(gun$PAPRES105PLUS))
+# using knn for filling in missing value
+gun <- knnImputation(gun)
+anyNA(gun)
+print(paste("any missing value? : ",anyNA(gun)))
+
+```
+# Feature engineering
+## PCA Dimensional visualization
+From the output we find that PC1 explains 22% of the variance, PC2 explains 11% and so on. We find that the first 20 components explain approximately 90% of the variance. As shown in the PCA output below, SIBS, RACE RELIG and TVHOURS contribute to the most part of PCA1 while PRESTG10, RINCOME contribute to most part of PCA2. 
+```{r}
+# Convert categorical variables to numeric in R
+gun_numeric <- gun
+must_convert<-sapply(gun_numeric,is.factor)
+M2<-sapply(gun_numeric[,must_convert],unclass)
+gun_numeric <-cbind(gun_numeric[,!must_convert],M2)
+gun_numeric$GUNLAW <- gun$GUNLAW
+# Use PCA to do Dimensional reduction link:https://www.datavedas.com/dimensionality-reduction-in-r/
+
+gun_numeric_withoutlabel <- subset(gun_numeric, select = -c(GUNLAW))
+
+gunlaw_label <- factor(gun_numeric$GUNLAW) # Get GUNLAW as label data
+
+pca_scaled <- prcomp(gun_numeric_withoutlabel, scale. = TRUE) # Perform PCA analysis
+
+loadings <- as.data.frame(pca_scaled$x) # Generate PCA Loadings
+
+Matrix <- pca_scaled$rotation # Generate Loading Matrix
+
+std_dev <- pca_scaled$sdev
+
+pr_comp_var <- std_dev^2 # Variance explained by each Principal Component
+
+prop_var_ex <- pr_comp_var/sum(pr_comp_var)# Ratio of Variance explained by each component
+
+plot(cumsum(prop_var_ex), xlab = "Principal Component",ylab = "Proportion of Variance Explained",type = "b")
+
+ggbiplot(pca_scaled)
+```
+# Classification algorithms used
+## Logistic Regression
+In the process of logistic regression, the preprocessed dataset derived from Gun Numeric is divided into 70% training set and 30% test set. Then the training set is segmented. After training model, we use the model to predict the test set and present in a confusion matrix compared with its ground truth (label). 
+
+As the number of label class in our dataset is imbalance, we choose F1 score and Kappa to evaluate the model precision. F-measure score is a new single index that combines accuracy rate and applicant rate. The success rate can only be obtained if both the accuracy rate and the evaluation rate can be seen. Kappa is another to evaluate the degree of consistency, which is between 0 and 1. The greater the value, the greater the degree of consistency. Therefore, the larger the value of kappa is, the better model is. In this model, the F1-score is 0.36 and Kappa is -0.04, which means the logistic regression model is not good using this dataset.
+
+Area Under Curve (AUC) under ROC curve is a measure of the accuracy of a quantitative diagnostic test. The higher the AUC, the better the performance of the model at identifying between positive and negative classes.When measuring the AUC for the ROC, the ROC and AUC of the perfect classifier was equal to 1, while that of the pure random classifier was equal to 0.5.
+From ROC graph, we can see that area under the curve for logistic regression model is 0.4591.
+```{r}
+#Logistic Regression
+
+set.seed(123)
+gun_numeric <- data.frame(gun_numeric)
+inTrain <- createDataPartition(gun_numeric$GUNLAW, p = 0.7)[[1]] # Training set Test set 7:3 
+guntrain <- gun_numeric[ inTrain, ]
+guntest  <- gun_numeric[-inTrain, ]
+
+
+glm.fit = glm((as.factor(GUNLAW)) ~ CHILDS + YEAR + EARNRS + OLD1 + HOMPOP + SIZE + SEI10 + SEI10INC + PASEI10 + 
+    PASEI10INC + PRESTG105PLUS + PAPRES10 + OWNGUN + 
+    SEX + RACE + DEGREE + RELIG + REGION + INCOME, data= guntrain,family=binomial(link="logit"))# Generate models from training data
+
+n=nrow(guntrain)# The number of rows of training data, that is, the number of samples
+
+p=predict(glm.fit,guntest)# Use the model to predict the test data
+p=exp(p)/(1+exp(p))# Compute the dependent variable
+guntest$GUNLAW_predicted = 1*(p>0.5)# Add a column to test data, that is, the prediction of GUNLAW. P >0.5, the predicted value is 1
+
+true_value = guntest[,31]
+predict_value = guntest[,42]# Take out columns 31 and 42
+
+true_value= ifelse(true_value=='FAVOR',1,0)
+# F1 score, kappa score
+lr.confusion <- caret::confusionMatrix(as.factor(true_value),as.factor(predict_value))
+lr.confusion
+print(paste0(lr.confusion[["byClass"]][["F1"]], " is F1 score"))
+print(paste0(lr.confusion[["overall"]][["Kappa"]], " is Kappa"))
+
+# ROC
+lr.roc <- roc(true_value,predict_value)
+plot.roc(lr.roc, asp=NA)
+
+# AUC
+auc(lr.roc)
+
+```
+## KNN
+In the process of KNN classification, in order to find the optimal Kappa value, we set k=1 to 10 to tune and then select the model with the best performance according to the maximum Kappa. We also used 10-fold cross validation to train the model in order to get more accurate parameter. 
+
+The F1-score is 0,81 and Kappa value is 0.031. The following line graph shows the relationship of kappa value and the value of K. It is clear to see when K equals to 3, kappa value is the highest among k=1 to 10. From ROC graph, we can see that area under the curve for KNN model is 0.5195.
+```{r}
+set.seed(123)
+knn.model <- train(GUNLAW ~ . , data = guntrain, method = "knn", 
+                   trControl = trainControl(method = "cv", number = 10, savePredictions = "all", classProbs = TRUE),
+                   tuneGrid = expand.grid(k = c(1:10)),
+                   metric = "Kappa")
+knn.model
+
+knn.pred <- predict(knn.model, newdata = guntest)
+
+# F1 score, kappa score
+knn.confusion <- caret::confusionMatrix(knn.pred, guntest$GUNLAW)
+knn.confusion
+print(paste0(knn.confusion[["byClass"]][["F1"]], " is F1 score"))
+print(paste0(knn.confusion[["overall"]][["Kappa"]], " is Kappa"))
+
+trellis.par.set(caretTheme())
+plot(knn.model, metric = "Kappa", xlab="Number of neighbors", main="Selecting K based on Kappa") 
+
+# ROC
+knn.roc <- roc(knn.model$pred$obs,knn.model$pred$FAVOR)
+plot.roc(knn.roc, asp=NA)
+
+# AUC
+auc(knn.roc)
+
+```
+## LDA
+In the process of LDA classification, we firstly set seed make sure the result always kept the same. We also choose folds at 10 for cross validation, For LDA model cross validation also plays the parameter tuning role. Thus, we have the linear discriminate analysis model ready. 
+
+As shown in confusion matrix below, Higher the F1-score better the model, meanwhile we should consider if the generalization of the model is acceptable. In this case, for LDA model we have the F1 score as 0.86 and the Kappa value is 0.12. From ROC graph, we can see that area under the curve for LDA model is 0.7036 which shows the highly distingusion between positive class and negative class.
+```{r}
+set.seed(123)
+
+lda.model <- train(GUNLAW ~ . , data = guntrain, method = "lda",  
+                   trControl = trainControl(method = "cv", number = 10, savePredictions = "all", classProbs = TRUE))
+lda.model
+lda.pred <- predict(lda.model, newdata = guntest)
+
+# F1 score, kappa score
+lda.confusion <- caret::confusionMatrix(lda.pred, guntest$GUNLAW)
+lda.confusion
+print(paste0(lda.confusion[["byClass"]][["F1"]], " is F1 score"))
+print(paste0(lda.confusion[["overall"]][["Kappa"]], " is Kappa"))
+
+# ROC
+lda.roc <- roc(lda.model$pred$obs,lda.model$pred$FAVOR)
+plot.roc(lda.roc, asp=NA)
+
+# AUC
+auc(lda.roc)
+
+```
+## XGBoost
+In the process of XGBoost model, 10-fold cross-validation method was also used in order to perform an accurate test. The evaluation metrics that we look into are primarily the Area under curve, F1 score as well as the kappa indices. Confusion matrix were used as an indicator of visualizing the predicted value comparing to the actual. 
+
+As during the process of the extreme gradient boosting, a max depth of 1, 5 and 10 was chosen as more values may result in a large increase in the pressure of computation. This may eventually lead to the crashing of the system. The metric of ROC was adopted to select the optimal model in this case using the largest value at 1000 rounds with maximum depth of 5
+. 
+The F1 score of the model is decent while measuring the recall and precision at a value of 0.8664855. The Kappa value of 0.1898 illustrates a consistency in between 0 to 1. 
+By calculating the area under the roc curve value at 0.7178, the model was well performed in regard to its measure of separability.
+
+```{r}
+xgbGrid <-  expand.grid(nrounds = c(500,1000,1500), 
+                        max_depth = c(1,5,10), 
+                        eta = 0.01,
+                        gamma = 0,
+                        colsample_bytree = 0.5,
+                        min_child_weight = 1,
+                        subsample = 0.5)
+                        
+nrow(xgbGrid)
+head(twoClassSummary)
+```
+
+```{r}
+set.seed(123)
+
+xgb.model <- train(GUNLAW ~ . , data = guntrain, method = "xgbTree",  
+                   trControl = trainControl(method = "cv", number = 10, savePredictions = "all", classProbs = TRUE, summaryFunction = twoClassSummary), 
+                   verbose = FALSE, 
+                   tuneGrid = xgbGrid,
+                   metric = "ROC")
+xgb.model
+```
+
+```{r}
+trellis.par.set(caretTheme())
+plot(xgb.model, metric = "ROC")  
+```
+
+```{r}
+xgb.pred <- predict(xgb.model, newdata = guntest)
+# F1 score, kappa score
+xgb.confusion <- caret::confusionMatrix(xgb.pred, guntest$GUNLAW)
+xgb.confusion
+print(paste0(xgb.confusion[["byClass"]][["F1"]], " is F1 score"))
+print(paste0(xgb.confusion[["overall"]][["Kappa"]], " is Kappa"))
+# ROC
+xgb.roc <- roc(xgb.model$pred$obs,xgb.model$pred$FAVOR)
+plot.roc(xgb.roc, asp=NA)
+# AUC
+auc(xgb.roc)
+```
+# Performance evaluation/Model comparsion
+## Comparison results display
+In this part, the experimental performance of four classifiers is analyzed, and the details leading to such performance differences are compared.
+
+By summarize the results of the experiment. Logistic regression does not perform well on this data set, with a very low AUC area of only 0.4590. As the high-level data such as kappa is-0.0403, and F1score performed poorly at 0.3575. The second classifier is the KNN classifier, with an AUC area of 0.5195, and the kappa is 0.0311 and it can be seen from the distribution of the confidence interval that the model is very stable. The third model is LDA. The AUC area of this model is 0.7035. It can be seen from the confidence interval that the model is also very stable. The accuracy rate are not compared in this case as there are label imbalance with the data. The fourth model is XGboost, which has the all the highest values in F1-score at 0.87, kappa at 0.15, AUC value of 0.7167.
+
+## Experiment results analysis
+As the XGBoost achieved the highest F1-score, Kappa and the biggest proportion auc from roc plot, we finally choose it as our optimal classifier to predict people who favor or oppose the gun control law. We also summarize the characteristics of these four classifiers thourgh the experiments, so as to better select specific one classifier based on different data sets and requirements:
+
+•	XGboost
+XGboost model is able to perform a high training calculation with less cost.
+Due to the high feature dimension of the data set, XGboost can better perform classification prediction through the method of ensemble learning.
+
+•	LDA model
+LDA model can improve the accuracy through prior knowledge of the category, but the model has higher requirements for the distribution of data. The data distribution of this data set is relatively stable after data preprocessing, and missing and outliers are removed.
+
+•	logistic regression
+Logistic regression model preform fast and it is easy to apply. As is a linear classifier, so it cannot handle the correlation between features. When the feature space is large, the performance is not good. Therefore, the LR model is difficult to fully fit in our dataset, resulting in a very low accuracy rate of the model.
+
+•	KNN classifiers
+KNN model is very simple and has a wide range of applications. But the computational cost is very high. Although the accuracy and stability of the model are not much different from the optimal model on this data set. The efficiency of this model is very low.
+```{r}
+print(paste0(lr.confusion[["byClass"]][["F1"]], " is LR F1 score"))
+print(paste0(lr.confusion[["overall"]][["Kappa"]], " is LR Kappa"))
+print(paste0(auc(lr.roc), " is LR auc"))
+
+print(paste0(knn.confusion[["byClass"]][["F1"]], " is KNN F1 score"))
+print(paste0(knn.confusion[["overall"]][["Kappa"]], " is KNN Kappa"))
+print(paste0(auc(knn.roc), " is KNN auc"))
+
+print(paste0(lda.confusion[["byClass"]][["F1"]], " is LDA F1 score"))
+print(paste0(lda.confusion[["overall"]][["Kappa"]], " is LDA Kappa"))
+print(paste0(auc(lda.roc), " is LDA auc"))
+
+print(paste0(xgb.confusion[["byClass"]][["F1"]], " is XGB F1 score"))
+print(paste0(xgb.confusion[["overall"]][["Kappa"]], " is XGB Kappa"))
+print(paste0(auc(xgb.roc), " is XGB auc"))
+
+```
+# Conclusion
+## Experiment steps conclusion
+This assignment our team is divided into three parts as a whole. 
+1. The first is to perform feature engineering on the data set. Our team first clarified the label data. In addition, our team also focused on dealing with missing values and outliers.
+
+2. In the second step, in order to improve the convergence speed and training efficiency of the model. Our team preprocessed the data set by PCA
+
+3. In the third part, our team tested different classifiers and finally found that the optimal model is XGboost.
+
+## Summary
+Our team summarized the following four points of experience from this assignment
+	The optimal model in this experiment is XGboasting, which F1-score is 0.87, Kappa is 0.15, and the area under curve is 0.7168.
+
+	Understand the characteristics of different classifiers
+
+	Understand the applicable scenarios of different classifiers
+
+	Understand the importance of data processing to data analysis
+
+## Potential problem
+1. Due to the large number of missing values in the data set, although data preprocessing has been performed to fill in the missing values, it still has a great negative impact on the final result.
+
+2. The amount of data in this data set is very large, and the feature dimension of the data set are also very large (41). In the case of limited computing calculate ability, it is difficult to finetune the hyperparameters to obtain a model that specifically fits the features of the data set.
+
+3. After research and data analysis, our team found that the data set has a problem of class imbalance. Take the common binary classification problem as an example, we use other indicators to evaluate the model.
+
+# Feature work
+After this experiment, we discovered the importance of feature engineering. Good data preprocessing and feature extraction are one of the key reasons for the success of machine learning models. We will adopt more data preprocessing methods in future learning. In addition, our team only tried the application of the model, and the hyperparameter tuning part needs further enhancement. In addition, in future learning, we will try more complex models and more complex data sets, such as photo classification and scene recognition, instead of just classifying text features. This can better fit the real application scenario,
+
+# Contribution
+All members take their own responsibility and contribute equally on all aspects of the project and agree on the contribution statement.
+
+
